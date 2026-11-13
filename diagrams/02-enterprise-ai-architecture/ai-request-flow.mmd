@@ -1,0 +1,45 @@
+%% AI request flow for the first vertical slice (PROPOSED design, not implemented or tested)
+%% Flow: onboarding (prior) -> AuthN/AuthZ -> LLM gateway -> inference -> usage and trace reporting
+%% Source: docs/02-enterprise-ai-architecture/llm-gateway-model-serving.md sections 2-3
+sequenceDiagram
+  autonumber
+  participant App as Tenant Application
+  participant Entra as Microsoft Entra ID
+  participant GW as LLM Gateway
+  participant Cache as Config Cache (signed snapshot)
+  participant RL as Rate-Limit Store
+  participant BR as Amazon Bedrock
+  participant UP as Usage Pipeline
+  participant OT as Observability Pipeline
+
+  App->>Entra: Request access token (workload identity)
+  Entra-->>App: OIDC access token
+  App->>GW: POST inference request + token + trace context
+  GW->>Cache: Validate token (cached JWKS) and check revocation list
+  alt Token invalid, expired or revoked
+    GW-->>App: 401 authentication error + trace ID
+  else Token valid
+    GW->>Cache: Evaluate policy (tenant, project, role, model entitlement, classification)
+    alt Policy denies
+      GW-->>App: 403 authorization error + trace ID
+    else Policy allows
+      GW->>RL: Check and increment rate and token limits
+      alt Limit exceeded
+        RL-->>GW: Over limit
+        GW-->>App: 429 rate or quota error + retry guidance
+      else Within limits
+        RL-->>GW: OK
+        GW->>BR: Invoke resolved model (AWS SDK via PrivateLink)
+        alt Provider success
+          BR-->>GW: Completion + token counts
+          GW-->>App: 200 response + token counts + trace ID
+        else Provider error or timeout
+          BR-->>GW: Error
+          GW-->>App: Failover to approved alternate if configured, else explicit provider error
+        end
+      end
+    end
+  end
+  GW-)UP: Usage event (tenant, project, principal, model, tokens, status, error class)
+  GW-)OT: Spans and metrics (gateway-added latency, upstream latency)
+  Note over GW,OT: Usage and telemetry are asynchronous and do not block the response (NFR-005)

@@ -1,0 +1,39 @@
+%% C4 Level 1 - System Context: CloudForge AI (PROPOSED architecture, not implemented)
+%% Source: docs/02-enterprise-ai-architecture/architecture-overview.md section 4
+C4Context
+  title System Context - CloudForge AI Platform (Proposed)
+
+  Person(dev, "AI Developer / ML Engineer", "Builds and operates tenant AI workloads (S01, S02)")
+  Person(user, "Employee End User", "Uses tenant AI applications; never calls the platform directly")
+  Person(approver, "Approver / Security", "Approves sensitive operations; administers policy (S05)")
+  Person(sre, "Platform Operator / SRE", "Operates platform services (S03, S04)")
+  Person(finops, "FinOps Analyst", "Reviews usage and cost attribution (S07)")
+
+  Enterprise_Boundary(cf, "CloudForge Enterprise") {
+    System(platform, "CloudForge AI Platform", "Multi-tenant AI PaaS: LLM gateway, agents, MCP, RAG, MLOps, governance (proposed)")
+    System(apps, "Tenant Applications", "Team-owned apps: knowledge assistant, ops agent, predictive maintenance")
+    System_Ext(sources, "Enterprise Data Sources", "Wikis, document stores, runbooks with source ACLs")
+    System_Ext(opsys, "Operational Systems", "Targets of governed MCP tool actions")
+    System_Ext(telemetry, "Telemetry / Sensor Sources", "Inputs for predictive maintenance")
+    System_Ext(siem, "Enterprise SIEM", "Security event monitoring (assumed)")
+  }
+
+  System_Ext(entra, "Microsoft Entra ID", "OIDC identity provider for users and workloads")
+  System_Ext(bedrock, "Amazon Bedrock", "Managed foundation model inference (proposed default)")
+  System_Ext(awsbill, "AWS Billing / CUR", "Infrastructure cost data")
+
+  Rel(user, apps, "Uses", "HTTPS")
+  Rel(dev, platform, "Onboards, deploys, views usage and traces", "HTTPS / CLI")
+  Rel(approver, platform, "Approves actions, manages policy", "HTTPS")
+  Rel(sre, platform, "Operates and monitors", "HTTPS")
+  Rel(finops, platform, "Reviews usage and cost reports", "HTTPS")
+  Rel(apps, platform, "Calls inference, retrieval, agent and model APIs", "HTTPS + OIDC token")
+  Rel(platform, entra, "Validates user and workload identities", "OIDC / JWKS")
+  Rel(platform, bedrock, "Invokes approved models", "AWS SDK via PrivateLink")
+  Rel(platform, sources, "Ingests approved content and ACLs", "Connectors")
+  Rel(platform, opsys, "Executes approved tool actions", "MCP via broker")
+  Rel(telemetry, platform, "Supplies feature data", "Batch / stream")
+  Rel(platform, siem, "Forwards security events", "Log export")
+  Rel(awsbill, platform, "Provides cost data for attribution", "CUR export")
+
+  UpdateLayoutConfig($c4ShapeInRow="4", $c4BoundaryInRow="1")

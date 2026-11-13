@@ -1,0 +1,75 @@
+%% C4 Level 2 - Containers: CloudForge AI (PROPOSED architecture, not implemented)
+%% Source: docs/02-enterprise-ai-architecture/architecture-overview.md section 5
+C4Container
+  title Container Diagram - CloudForge AI Platform (Proposed)
+
+  Person(dev, "AI Developer / ML Engineer", "Tenant team member")
+  Person(approver, "Approver", "Security or business owner")
+  System_Ext(apps, "Tenant Applications", "Team-owned AI applications")
+  System_Ext(entra, "Microsoft Entra ID", "OIDC identity provider")
+  System_Ext(bedrock, "Amazon Bedrock", "Managed model inference")
+  System_Ext(sources, "Enterprise Data Sources", "Content with source ACLs")
+  System_Ext(opsys, "Operational Systems", "MCP tool targets")
+
+  System_Boundary(platform, "CloudForge AI Platform") {
+    Boundary(cp, "Control Plane", "management") {
+      Container(portal, "Developer Portal and CLI", "Web app, CLI", "Self-service onboarding, catalog, usage views")
+      Container(cpapi, "Control-Plane API", "Service on EKS", "Tenants, projects, credentials, entitlements, quotas, catalog, policy, registries")
+      Container(approval, "Approval Service", "Service on EKS", "Sensitive-operation requests, decisions, timeouts")
+      Container(configdist, "Config Distribution", "Service + S3", "Publishes KMS-signed config and policy snapshots")
+      ContainerDb(cpdb, "Control-Plane Database", "Aurora PostgreSQL (assumed)", "Authoritative tenant and config state")
+    }
+    Boundary(dp, "Data Plane", "execution") {
+      Container(gateway, "LLM Gateway", "Custom service; LiteLLM candidate only", "AuthN/AuthZ, quotas, routing, metering")
+      ContainerDb(ratelimit, "Rate-Limit Store", "ElastiCache Redis-compatible (assumed)", "Per-tenant counters")
+      Container(vllm, "Self-Hosted Model Serving", "vLLM on EKS GPU nodes (optional)", "Open-weight models")
+      Container(agents, "Agent Runtime", "LangGraph workers on EKS", "Agent graphs, checkpoints, approval interrupts")
+      Container(mcp, "MCP Broker", "Service on EKS", "Governed tool invocation and credential minting")
+      Container(workflows, "Platform Workflow Engine", "Temporal (candidate)", "Ingestion, re-sync, promotion, approval timers")
+      Container(ingest, "RAG Ingestion Workers", "Workers on EKS", "Connectors, chunking, ACL capture")
+      Container(retrieval, "Retrieval Service", "Service on EKS", "ACL-filtered retrieval with citations")
+      ContainerDb(opensearch, "Vector / Search Store", "Amazon OpenSearch Service", "Per-tenant indexes")
+      Container(mlflow, "MLOps Services", "MLflow on EKS + S3", "Experiment tracking, model registry")
+      Container(mlwork, "Training and Serving Workloads", "EKS jobs and deployments", "Tenant training, batch and online scoring")
+    }
+    Boundary(shared, "Shared Services", "cross-cutting") {
+      Container(usage, "Usage Pipeline", "Kinesis or SQS (open) + usage DB", "Durable usage events and cost estimates")
+      Container(otel, "Observability Pipeline", "OpenTelemetry collector + backend (open)", "Traces, metrics, logs")
+      ContainerDb(audit, "Audit Store", "S3 Object Lock (assumed)", "Append-only, tamper-evident audit records")
+      Container(secrets, "Secrets and Keys", "Secrets Manager, KMS", "Secrets and encryption keys")
+    }
+  }
+
+  Rel(dev, portal, "Onboards and manages projects", "HTTPS")
+  Rel(portal, cpapi, "Calls", "HTTPS")
+  Rel(cpapi, cpdb, "Reads and writes", "SQL")
+  Rel(cpapi, configdist, "Commits config versions", "Internal API")
+  Rel(configdist, gateway, "Distributes signed snapshots", "Pull / notify")
+  Rel(configdist, mcp, "Distributes signed snapshots", "Pull / notify")
+  Rel(configdist, retrieval, "Distributes signed snapshots", "Pull / notify")
+  Rel(apps, gateway, "Inference and embeddings", "HTTPS + OIDC token")
+  Rel(apps, retrieval, "Retrieves on behalf of end user", "HTTPS + OBO token")
+  Rel(apps, agents, "Starts agent runs", "HTTPS + OIDC token")
+  Rel(gateway, entra, "Fetches signing keys", "JWKS (cached)")
+  Rel(gateway, ratelimit, "Checks and increments limits", "Redis protocol")
+  Rel(gateway, bedrock, "Invokes models", "AWS SDK via PrivateLink")
+  Rel(gateway, vllm, "Invokes self-hosted models", "OpenAI-compatible HTTP")
+  Rel(agents, gateway, "Reasoning calls", "HTTPS")
+  Rel(agents, mcp, "Requests tool calls", "MCP")
+  Rel(mcp, approval, "Verifies approval for sensitive calls", "HTTPS (fail closed)")
+  Rel(mcp, opsys, "Executes scoped tool actions", "MCP / HTTPS via egress proxy")
+  Rel(approver, approval, "Approves or rejects", "HTTPS")
+  Rel(workflows, ingest, "Schedules ingestion and re-sync", "Temporal activities")
+  Rel(ingest, sources, "Pulls content and ACLs", "Connectors")
+  Rel(ingest, gateway, "Embeds chunks", "HTTPS")
+  Rel(ingest, opensearch, "Writes tenant indexes", "HTTPS")
+  Rel(retrieval, opensearch, "Queries with ACL filter", "HTTPS")
+  Rel(mlwork, mlflow, "Logs runs, registers models", "MLflow API")
+  Rel(workflows, mlflow, "Runs promotion workflow", "MLflow API")
+  Rel(gateway, usage, "Emits usage events", "Async")
+  Rel(gateway, otel, "Emits traces and metrics", "OTLP")
+  Rel(cpapi, audit, "Writes audit events", "Append-only")
+  Rel(mcp, audit, "Writes audit events", "Append-only")
+  Rel(gateway, secrets, "Reads provider config and keys", "IAM role")
+
+  UpdateLayoutConfig($c4ShapeInRow="4", $c4BoundaryInRow="1")
