@@ -1,5 +1,6 @@
 from sqlalchemy import Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import JSON, UniqueConstraint
 
 
 # Base class for SQLAlchemy ORM models.
@@ -40,3 +41,32 @@ class AIModel(Base):
         Integer,
         nullable=False,
     )
+class IdempotencyRecord(Base):
+    """
+    Stores the result of a previously processed API request.
+    """
+
+    __tablename__ = "idempotency_records"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "operation",
+            "idempotency_key",
+            name="uq_idempotency_tenant_operation_key",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    tenant_id: Mapped[str] = mapped_column(nullable=False)
+
+    operation: Mapped[str] = mapped_column(nullable=False)
+
+    idempotency_key: Mapped[str] = mapped_column(nullable=False)
+
+    request_hash: Mapped[str] = mapped_column(nullable=False)
+
+    response_body: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    status_code: Mapped[int] = mapped_column(nullable=False)
