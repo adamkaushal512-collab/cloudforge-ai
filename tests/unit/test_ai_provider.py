@@ -12,6 +12,8 @@ from cloudforge.services.ai_provider import (
     execute_with_timeout,
 )
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def recorded_sleeps(monkeypatch):
